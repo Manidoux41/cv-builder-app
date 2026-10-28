@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus, Trash2, Save, Printer, Eye, UserRound, Palette, LayoutTemplate, Download, RotateCcw, ChevronDown, ChevronUp } from "lucide-react";
 import { defaultResume, type ResumeData, type Entry } from "@/lib/default-resume";
 
@@ -40,10 +40,14 @@ export default function CVBuilder() {
   const [saved, setSaved] = useState("Chargement…");
   const [showPreview, setShowPreview] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [cvLanguage, setCvLanguage] = useState<"fr" | "en">("fr");
 
   useEffect(() => {
     fetch("/api/cv").then(r => r.json()).then(r => {
-      if (r?.data) setResume({ ...defaultResume, ...r.data });
+      if (r?.data) {
+        setResume({ ...defaultResume, ...r.data });
+        if (r.data.cvLanguage === "en" || r.data.cvLanguage === "fr") setCvLanguage(r.data.cvLanguage);
+      }
       if (r?.id) setResumeId(r.id);
       setSaved("Prêt à modifier");
     }).catch(() => setSaved("Mode local — configurez la base pour sauvegarder"));
@@ -67,6 +71,7 @@ export default function CVBuilder() {
     if (!confirmed) return;
 
     setResume(createEmptyResume());
+    setCvLanguage("fr");
     setSection("profile");
     setExpanded(null);
     setSaved("CV vierge — pensez à enregistrer");
@@ -83,12 +88,12 @@ export default function CVBuilder() {
   async function save() {
     setSaved("Enregistrement…");
     try {
-      const response = await fetch("/api/cv", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: resumeId, title: resume.fullName || "Mon CV", data: resume }) });
+      const response = await fetch("/api/cv", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: resumeId, title: resume.fullName || (cvLanguage === "fr" ? "Mon CV" : "My CV"), data: { ...resume, cvLanguage } }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Erreur");
       setResumeId(result.id); setSaved("Enregistré ✓");
     } catch (e) {
-      localStorage.setItem("cv-studio-draft", JSON.stringify(resume));
+      localStorage.setItem("cv-studio-draft", JSON.stringify({ ...resume, cvLanguage }));
       setSaved("Brouillon conservé dans ce navigateur");
     }
   }
@@ -166,13 +171,13 @@ export default function CVBuilder() {
           {section === "education" && <EntriesSection title="Diplômes & formations" description="Formations, diplômes, certifications et années." items={resume.education} kind="education" updateEntry={updateEntry} addEntry={addEntry} deleteEntry={deleteEntry} expanded={expanded} setExpanded={setExpanded}/>}
           {section === "projects" && <EntriesSection title="Projets & réalisations" description="Mettez en valeur vos réalisations concrètes." items={resume.projects} kind="projects" updateEntry={updateEntry} addEntry={addEntry} deleteEntry={deleteEntry} expanded={expanded} setExpanded={setExpanded}/>}
           {section === "skills" && <section className="form-section"><SectionTitle number="05" title="Compétences & langues" description="Une compétence ou une langue par ligne."/><Field label="Compétences techniques et transversales"><textarea rows={10} value={resume.skills.join("\n")} onChange={e => update("skills", e.target.value.split("\n").map(s => s.trim()).filter(Boolean))}/><Hint>Chaque ligne devient un élément de la liste.</Hint></Field><div className="subheading"><h3>Langues</h3><button className="btn btn-outline btn-small" onClick={() => update("languages", [...resume.languages, { id: uid(), name: "", level: "" }])}><Plus size={14}/> Ajouter</button></div>{resume.languages.map(lang => <div className="language-row" key={lang.id}><input aria-label="Langue" value={lang.name} placeholder="Langue" onChange={e => update("languages", resume.languages.map(l => l.id === lang.id ? {...l, name: e.target.value} : l))}/><input aria-label="Niveau" value={lang.level} placeholder="Niveau" onChange={e => update("languages", resume.languages.map(l => l.id === lang.id ? {...l, level: e.target.value} : l))}/><button className="icon-button danger" onClick={() => update("languages", resume.languages.filter(l => l.id !== lang.id))}><Trash2 size={15}/></button></div>)}<Field label="Qualités professionnelles"><textarea rows={4} value={resume.strengths.join("\n")} onChange={e => update("strengths", e.target.value.split("\n").map(s => s.trim()).filter(Boolean))}/></Field></section>}
-          {section === "style" && <section className="form-section"><SectionTitle number="06" title="Style du document" description="Personnalisez les couleurs, la police et la disposition."/><Field label="Couleur principale"><div className="color-row"><input className="color-input" type="color" value={resume.theme} onChange={e => update("theme", e.target.value)}/><input value={resume.theme} onChange={e => update("theme", e.target.value)} aria-label="Code couleur"/></div><div className="swatches">{["#245c73","#164e63","#2563eb","#6d28d9","#0f766e","#b45309","#374151","#9f1239"].map(color => <button key={color} aria-label={`Choisir ${color}`} className={`swatch ${resume.theme === color ? "chosen" : ""}`} style={{background:color}} onClick={() => update("theme", color)}/>)}</div></Field><Field label="Disposition du CV"><div className="layout-options"><button className={resume.layout === "sidebar" ? "layout-option chosen" : "layout-option"} onClick={() => update("layout","sidebar")}><LayoutTemplate/><strong>Colonne latérale</strong><small>Style moderne, compact</small></button><button className={resume.layout === "classic" ? "layout-option chosen" : "layout-option"} onClick={() => update("layout","classic")}><LayoutTemplate/><strong>Classique</strong><small>Une colonne, sobre</small></button></div></Field><Field label="Police d'écriture"><select value={resume.font} onChange={e => update("font", e.target.value)}><option>Arial</option><option>Inter</option><option>Georgia</option><option>Verdana</option><option>Trebuchet MS</option></select></Field><label className="toggle-row"><span><strong>Afficher la photo</strong><small>Inclure le portrait dans l'en-tête du CV</small></span><input type="checkbox" checked={resume.showPhoto} onChange={e => update("showPhoto", e.target.checked)}/></label><div className="print-note"><Printer size={18}/><div><strong>Format A4, une page</strong><p>Le modèle est optimisé pour une feuille A4. Si le contenu devient trop long, réduisez le texte ou retirez des éléments avant impression.</p></div></div></section>}
+          {section === "style" && <section className="form-section"><SectionTitle number="06" title="Style du document" description="Personnalisez les couleurs, la police et la disposition."/><Field label="Langue du CV"><select value={cvLanguage} onChange={e => setCvLanguage(e.target.value as "fr" | "en")}><option value="fr">Français</option><option value="en">English</option></select><Hint>Cette option traduit les titres et libellés du document. Le contenu que tu saisis dans les champs n’est pas traduit automatiquement.</Hint></Field><Field label="Couleur principale"><div className="color-row"><input className="color-input" type="color" value={resume.theme} onChange={e => update("theme", e.target.value)}/><input value={resume.theme} onChange={e => update("theme", e.target.value)} aria-label="Code couleur"/></div><div className="swatches">{["#245c73","#164e63","#2563eb","#6d28d9","#0f766e","#b45309","#374151","#9f1239"].map(color => <button key={color} aria-label={`Choisir ${color}`} className={`swatch ${resume.theme === color ? "chosen" : ""}`} style={{background:color}} onClick={() => update("theme", color)}/>)}</div></Field><Field label="Disposition du CV"><div className="layout-options"><button className={resume.layout === "sidebar" ? "layout-option chosen" : "layout-option"} onClick={() => update("layout","sidebar")}><LayoutTemplate/><strong>Colonne latérale</strong><small>Style moderne, compact</small></button><button className={resume.layout === "classic" ? "layout-option chosen" : "layout-option"} onClick={() => update("layout","classic")}><LayoutTemplate/><strong>Classique</strong><small>Une colonne, sobre</small></button></div></Field><Field label="Police d'écriture"><select value={resume.font} onChange={e => update("font", e.target.value)}><option>Arial</option><option>Inter</option><option>Georgia</option><option>Verdana</option><option>Trebuchet MS</option></select></Field><label className="toggle-row"><span><strong>Afficher la photo</strong><small>Inclure le portrait dans l'en-tête du CV</small></span><input type="checkbox" checked={resume.showPhoto} onChange={e => update("showPhoto", e.target.checked)}/></label><div className="print-note"><Printer size={18}/><div><strong>Format A4, une page</strong><p>Le modèle est optimisé pour une feuille A4. Si le contenu devient trop long, réduisez le texte ou retirez des éléments avant impression.</p></div></div></section>}
         </div>
         <footer className="editor-footer"><span>CV Studio <span className="muted">· Format A4</span></span><button className="btn btn-primary" onClick={() => window.print()}><Printer size={16}/> Exporter / imprimer</button></footer>
       </aside>
       <section className={`preview-panel ${showPreview ? "" : "preview-hidden"}`}>
         <div className="preview-toolbar"><div><span className="live-dot"/> <strong>Aperçu en direct</strong><span className="muted">· A4 portrait</span></div><div className="preview-tools"><button className="icon-button" onClick={() => setShowPreview(!showPreview)} title="Afficher / masquer"><Eye size={17}/></button><button className="btn btn-outline btn-small" onClick={downloadPDF}><Download size={15}/> Télécharger PDF</button></div></div>
-        {showPreview ? <div className="paper-stage"><ResumePreview resume={resume}/></div> : <button className="show-preview" onClick={() => setShowPreview(true)}><Eye size={17}/> Afficher l’aperçu</button>}
+        {showPreview ? <div className="paper-stage"><ResumePreview resume={resume} language={cvLanguage}/></div> : <button className="show-preview" onClick={() => setShowPreview(true)}><Eye size={17}/> Afficher l’aperçu</button>}
       </section>
     </div>
   </main>;
@@ -189,25 +194,92 @@ function EntriesSection({title,description,items,kind,updateEntry,addEntry,delet
   return <section className="form-section"><SectionTitle number={kind==="experience"?"02":kind==="education"?"03":"04"} title={title} description={description}/>{items.map((item,index)=><article className="entry-card" key={item.id}><button className="entry-head" onClick={() => setExpanded(expanded===item.id?null:item.id)}><span className="entry-index">{String(index+1).padStart(2,"0")}</span><span className="entry-summary"><strong>{item.title || "Nouvel élément"}</strong><small>{item.organization || "Organisation"}{item.start||item.end ? ` · ${item.start} – ${item.end}` : ""}</small></span>{expanded===item.id?<ChevronUp size={17}/>:<ChevronDown size={17}/>}</button>{expanded===item.id && <div className="entry-fields"><Field label="Intitulé"><input value={item.title} onChange={e=>updateEntry(kind,item.id,"title",e.target.value)}/></Field><Field label="Entreprise / établissement"><input value={item.organization} onChange={e=>updateEntry(kind,item.id,"organization",e.target.value)}/></Field><Field label="Lieu"><input value={item.location||""} onChange={e=>updateEntry(kind,item.id,"location",e.target.value)}/></Field><div className="field-grid"><Field label="Date de début"><input value={item.start||""} onChange={e=>updateEntry(kind,item.id,"start",e.target.value)} placeholder="2022"/></Field><Field label="Date de fin"><input value={item.end||""} onChange={e=>updateEntry(kind,item.id,"end",e.target.value)} placeholder="Présent"/></Field></div><Field label="Description / missions"><textarea rows={5} value={item.description} onChange={e=>updateEntry(kind,item.id,"description",e.target.value)}/></Field><button className="text-button danger-text" onClick={()=>deleteEntry(kind,item.id)}><Trash2 size={14}/> Supprimer cet élément</button></div>}</article>)}<button className="add-entry" onClick={()=>addEntry(kind)}><Plus size={17}/> Ajouter {kind==="experience"?"une expérience":kind==="education"?"un diplôme ou une formation":"un projet"}</button></section>
 }
 
-function ResumePreview({resume}:{resume:ResumeData}) {
+type CVLanguage = "fr" | "en";
+
+const cvLabels = {
+  fr: {
+    contact: "CONTACT", location: "Localisation", phone: "Téléphone", email: "E-mail", linkedin: "LinkedIn", github: "GitHub",
+    skills: "COMPÉTENCES", languages: "LANGUES", strengths: "ATOUTS", availability: "DISPONIBILITÉ", profile: "PROFIL PROFESSIONNEL",
+    projects: "PROJETS & RÉALISATIONS", itProjects: "PROJETS IT & NUMÉRIQUES", experience: "EXPÉRIENCE PROFESSIONNELLE",
+    education: "FORMATION & DIPLÔMES", languagesStrengths: "LANGUES & ATOUTS", yourName: "", photo: "Photo", strengthsOnly: "ATOUTS",
+  },
+  en: {
+    contact: "CONTACT", location: "Location", phone: "Phone", email: "Email", linkedin: "LinkedIn", github: "GitHub",
+    skills: "SKILLS", languages: "LANGUAGES", strengths: "STRENGTHS", availability: "AVAILABILITY", profile: "PROFESSIONAL PROFILE",
+    projects: "PROJECTS & ACHIEVEMENTS", itProjects: "IT & DIGITAL PROJECTS", experience: "PROFESSIONAL EXPERIENCE",
+    education: "EDUCATION & QUALIFICATIONS", languagesStrengths: "LANGUAGES", yourName: "", photo: "Photo", strengthsOnly: "STRENGTHS",
+  },
+} as const;
+
+function ResumePreview({resume, language}: {resume: ResumeData; language: CVLanguage}) {
   const sidebar = resume.layout === "sidebar";
-  return <article className={`resume-paper ${sidebar?"resume-sidebar":"resume-classic"}`} style={{"--accent":resume.theme,"fontFamily":resume.font} as React.CSSProperties}>
-    <header className="resume-header">
-      {resume.showPhoto && resume.photo && <img className="resume-photo" src={resume.photo} alt="Photo"/>}
-      <div className="resume-name"><h1>{resume.fullName || "Votre nom"}</h1><p>{resume.headline}</p></div>
-      {!sidebar && <div className="resume-contact">{[resume.email,resume.phone,resume.location,resume.linkedin,resume.github].filter(Boolean).join("  •  ")}</div>}
-    </header>
-    {sidebar ? <div className="resume-columns"><aside className="resume-side">
-      <ResumeSection title="CONTACT"><ContactLine label="Localisation" value={resume.location}/><ContactLine label="Téléphone" value={resume.phone}/><ContactLine label="E-mail" value={resume.email}/><ContactLine label="LinkedIn" value={resume.linkedin}/><ContactLine label="GitHub" value={resume.github}/></ResumeSection>
-      <ResumeSection title="COMPÉTENCES"><ul className="resume-bullets">{resume.skills.map((s,i)=><li key={`${s}-${i}`}>{s}</li>)}</ul></ResumeSection>
-      <ResumeSection title="LANGUES"><ul className="resume-languages">{resume.languages.filter(l=>l.name).map(l=><li key={l.id}><strong>{l.name}</strong><span>{l.level}</span></li>)}</ul></ResumeSection>
-      <ResumeSection title="ATOUTS"><ul className="resume-bullets">{resume.strengths.map((s,i)=><li key={`${s}-${i}`}>{s}</li>)}</ul></ResumeSection>
-      {resume.availability && <ResumeSection title="DISPONIBILITÉ"><p>{resume.availability}</p></ResumeSection>}
-    </aside><div className="resume-main"><ResumeSection title="PROFIL PROFESSIONNEL"><p>{resume.summary}</p></ResumeSection><ResumeEntries title="PROJETS IT & NUMÉRIQUES" entries={resume.projects}/><ResumeEntries title="EXPÉRIENCE PROFESSIONNELLE" entries={resume.experience}/><ResumeEntries title="FORMATION & DIPLÔMES" entries={resume.education}/></div></div>
-    : <div className="resume-classic-body"><ResumeSection title="PROFIL PROFESSIONNEL"><p>{resume.summary}</p></ResumeSection><ResumeEntries title="EXPÉRIENCE PROFESSIONNELLE" entries={resume.experience}/><ResumeEntries title="PROJETS & RÉALISATIONS" entries={resume.projects}/><ResumeEntries title="FORMATION & DIPLÔMES" entries={resume.education}/><div className="classic-bottom"><ResumeSection title="COMPÉTENCES"><p>{resume.skills.join(" · ")}</p></ResumeSection><ResumeSection title="LANGUES & ATOUTS"><p>{resume.languages.map(l=>`${l.name} (${l.level})`).join(" · ")}. {resume.strengths.join(" · ")}</p></ResumeSection></div></div>}
-    <footer className="resume-footer">{resume.fullName} <span>•</span> {resume.location} <span>•</span> {resume.headline}</footer>
+  const t = cvLabels[language];
+  const experiences = resume.experience.filter(hasEntryContent);
+  const education = resume.education.filter(hasEntryContent);
+  const projects = resume.projects.filter(hasEntryContent);
+  const skills = resume.skills.map(s => s.trim()).filter(Boolean);
+  const languages = resume.languages.filter(l => l.name.trim() || l.level.trim());
+  const strengths = resume.strengths.map(s => s.trim()).filter(Boolean);
+  const contacts = [resume.email, resume.phone, resume.location, resume.linkedin, resume.github].filter(v => v?.trim());
+  const hasIdentity = Boolean(resume.fullName.trim() || resume.headline.trim() || (resume.showPhoto && resume.photo));
+  const hasProfile = Boolean(resume.summary.trim());
+  const hasContact = Boolean(resume.location.trim() || resume.phone.trim() || resume.email.trim() || resume.linkedin.trim() || resume.github.trim());
+  const hasSidebarContent = hasContact || skills.length > 0 || languages.length > 0 || strengths.length > 0 || Boolean(resume.availability.trim());
+  const useSidebarLayout = sidebar && hasSidebarContent;
+  const hasFooter = Boolean(resume.fullName.trim() || resume.location.trim() || resume.headline.trim());
+
+  return <article className={`resume-paper ${useSidebarLayout ? "resume-sidebar" : "resume-classic"}`} style={{"--accent": resume.theme, fontFamily: resume.font} as React.CSSProperties}>
+    {hasIdentity && <header className="resume-header">
+      {resume.showPhoto && resume.photo && <img className="resume-photo" src={resume.photo} alt={t.photo}/>}
+      {(resume.fullName.trim() || resume.headline.trim()) && <div className="resume-name">{resume.fullName.trim() && <h1>{resume.fullName}</h1>}{resume.headline.trim() && <p>{resume.headline}</p>}</div>}
+      {!useSidebarLayout && contacts.length > 0 && <div className="resume-contact">{contacts.join("  •  ")}</div>}
+    </header>}
+    {useSidebarLayout ? <div className="resume-columns">
+      <aside className="resume-side">
+        {hasContact && <ResumeSection title={t.contact}><ContactLine label={t.location} value={resume.location}/><ContactLine label={t.phone} value={resume.phone}/><ContactLine label={t.email} value={resume.email}/><ContactLine label={t.linkedin} value={resume.linkedin}/><ContactLine label={t.github} value={resume.github}/></ResumeSection>}
+        {skills.length > 0 && <ResumeSection title={t.skills}><ul className="resume-bullets">{skills.map((skill, i) => <li key={`${skill}-${i}`}>{skill}</li>)}</ul></ResumeSection>}
+        {languages.length > 0 && <ResumeSection title={t.languages}><ul className="resume-languages">{languages.map((lang, i) => <li key={lang.id || `${lang.name}-${i}`}>{lang.name.trim() && <strong>{lang.name}</strong>}{lang.level.trim() && <span>{lang.level}</span>}</li>)}</ul></ResumeSection>}
+        {strengths.length > 0 && <ResumeSection title={t.strengths}><ul className="resume-bullets">{strengths.map((strength, i) => <li key={`${strength}-${i}`}>{strength}</li>)}</ul></ResumeSection>}
+        {resume.availability.trim() && <ResumeSection title={t.availability}><p>{resume.availability}</p></ResumeSection>}
+      </aside>
+      <div className="resume-main">
+        {hasProfile && <ResumeSection title={t.profile}><p>{resume.summary}</p></ResumeSection>}
+        {projects.length > 0 && <ResumeEntries title={t.itProjects} entries={projects}/> }
+        {experiences.length > 0 && <ResumeEntries title={t.experience} entries={experiences}/>}
+        {education.length > 0 && <ResumeEntries title={t.education} entries={education}/>}
+      </div>
+    </div> : <div className="resume-classic-body">
+      {hasProfile && <ResumeSection title={t.profile}><p>{resume.summary}</p></ResumeSection>}
+      {experiences.length > 0 && <ResumeEntries title={t.experience} entries={experiences}/>}
+      {projects.length > 0 && <ResumeEntries title={t.projects} entries={projects}/>}
+      {education.length > 0 && <ResumeEntries title={t.education} entries={education}/>}
+      {(skills.length > 0 || languages.length > 0 || strengths.length > 0) && <div className="classic-bottom">
+        {skills.length > 0 && <ResumeSection title={t.skills}><p>{skills.join(" · ")}</p></ResumeSection>}
+        {languages.length > 0 && <ResumeSection title={t.languages}><p>{languages.map(l => [l.name.trim(), l.level.trim() ? `(${l.level})` : ""].filter(Boolean).join(" ")).filter(Boolean).join(" · ")}</p></ResumeSection>}
+        {strengths.length > 0 && <ResumeSection title={t.strengthsOnly}><p>{strengths.join(" · ")}</p></ResumeSection>}
+      </div>}
+      {resume.availability.trim() && <ResumeSection title={t.availability}><p>{resume.availability}</p></ResumeSection>}
+    </div>}
+    {hasFooter && <footer className="resume-footer">{[resume.fullName, resume.location, resume.headline].map(v => v.trim()).filter(Boolean).map((v, i) => <span key={`${v}-${i}`}>{i > 0 && <> <span>•</span> </>}{v}</span>)}</footer>}
   </article>;
 }
-function ContactLine({label,value}:{label:string,value:string}){return value?<div className="contact-line"><small>{label}</small><span>{value}</span></div>:null}
-function ResumeSection({title,children}:{title:string,children:React.ReactNode}){return <section className="resume-section"><h2>{title}</h2>{children}</section>}
-function ResumeEntries({title,entries}:{title:string,entries:Entry[]}){return <ResumeSection title={title}><div className="resume-entries">{entries.filter(e=>e.title||e.organization).map(e=><article className="resume-entry" key={e.id}><div className="entry-top"><strong>{e.title}</strong><span>{[e.start,e.end].filter(Boolean).join(" – ")}</span></div><div className="entry-org">{[e.organization,e.location].filter(Boolean).join(" • ")}</div>{e.description && <p>{e.description}</p>}</article>)}</div></ResumeSection>}
+
+function hasEntryContent(entry: Entry) {
+  return Boolean(entry.title?.trim() || entry.organization?.trim() || entry.location?.trim() || entry.start?.trim() || entry.end?.trim() || entry.description?.trim());
+}
+
+function ContactLine({label, value}: {label: string; value: string}) {
+  return value?.trim() ? <div className="contact-line"><small>{label}</small><span>{value}</span></div> : null;
+}
+function ResumeSection({title, children}: {title: string; children: React.ReactNode}) {
+  return <section className="resume-section"><h2>{title}</h2>{children}</section>;
+}
+function ResumeEntries({title, entries}: {title: string; entries: Entry[]}) {
+  const filledEntries = entries.filter(hasEntryContent);
+  if (filledEntries.length === 0) return null;
+  return <ResumeSection title={title}><div className="resume-entries">{filledEntries.map(e => <article className="resume-entry" key={e.id}>
+    {(e.title?.trim() || e.start?.trim() || e.end?.trim()) && <div className="entry-top">{e.title?.trim() && <strong>{e.title}</strong>}<span>{[e.start, e.end].filter(v => v?.trim()).join(" – ")}</span></div>}
+    {[e.organization, e.location].some(v => v?.trim()) && <div className="entry-org">{[e.organization, e.location].filter(v => v?.trim()).join(" • ")}</div>}
+    {e.description?.trim() && <p>{e.description}</p>}
+  </article>)}</div></ResumeSection>;
+}
